@@ -1,0 +1,26 @@
+# NEV GCS configuration
+
+# ── Vehicle UDP ──────────────────────────────────────────────
+vehicle_ip:   "127.0.0.1"
+vehicle_port: 5001
+rx_port:  5000
+
+# ── Web server ───────────────────────────────────────────────
+web_port: 8080
+
+# ── Send rates ───────────────────────────────────────────────
+heartbeat_rate:       5.0    # Hz — HB packets to vehicle
+teleop_rate:         20.0    # Hz — TC packets when mode=2
+state_push_interval:  0.5    # sec — periodic UI refresh
+
+# ── Joystick ─────────────────────────────────────────────────
+joystick:
+  axis_speed:     1      # 왼쪽 스틱 Y  → linear_x  (제어)
+  axis_steer:     3      # 오른쪽 스틱 X → angular_z (제어)
+  axis_raw_speed: 1      # 오른쪽 스틱 Y → raw_speed (표시용)
+  axis_raw_steer: 3      # 왼쪽 스틱 X  → raw_steer (표시용)
+  btn_estop:      4      # shoulder button for e-stop toggle
+  max_speed:      1.0    # m/s
+  max_steer_deg:  27.0   # 최대 조향각 (도) — Hunter 2.0 물리적 한계 기준
+  deadzone:       0.05
+  invert_speed:   true   # push stick forward = positive linear_x
