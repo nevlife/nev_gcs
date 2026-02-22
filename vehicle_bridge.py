@@ -6,6 +6,7 @@ import time
 import zenoh
 
 from state import SharedState
+from web import video_relay
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ class VehicleProtocol:
             self._session.declare_subscriber('nev/vehicle/gpu',     self._on_gpu),
             self._session.declare_subscriber('nev/vehicle/disk',    self._on_disk),
             self._session.declare_subscriber('nev/vehicle/net',     self._on_net),
+            self._session.declare_subscriber('nev/vehicle/camera',  self._on_camera),
         ]
         logger.info(f'Zenoh bridge started → {locator or "auto-discovery"}')
 
@@ -132,6 +134,10 @@ class VehicleProtocol:
                 })
         self._call_fn(_update)
 
+    def _on_camera(self, sample):
+        jpeg = bytes(sample.payload)
+        self._loop.call_soon_threadsafe(video_relay.frame_buffer.update, jpeg)
+
     def _on_net(self, sample):
         data = json.loads(bytes(sample.payload))
         def _update():
@@ -183,17 +189,29 @@ class VehicleProtocol:
 # ── Send loop (asyncio) ───────────────────────────────────────────────────────
 
 async def run_send_loop(state: SharedState, proto: VehicleProtocol, cfg: dict):
-    """Periodic heartbeat and teleop sender."""
+    """Periodic heartbeat, teleop sender, and reconnection watchdog."""
     hb_interval   = 1.0 / cfg.get('heartbeat_rate',   5.0)
     tc_interval   = 1.0 / cfg.get('teleop_rate',      20.0)
     push_interval = cfg.get('state_push_interval', 0.5)
+    disconnect_timeout = 3.0  # sec — vehicle data 없으면 disconnected 판정
 
     last_hb   = 0.0
     last_tc   = 0.0
     last_push = 0.0
+    _disconnected = False
 
     while True:
         now = time.monotonic()
+
+        # ── 연결 상태 모니터링 ────────────────────────────────────────────────
+        if state.last_vehicle_recv > 0:
+            age = now - state.last_vehicle_recv
+            if age > disconnect_timeout and not _disconnected:
+                _disconnected = True
+                logger.warning('Vehicle disconnected')
+            elif age < 1.0 and _disconnected:
+                _disconnected = False
+                logger.info('Vehicle reconnected')
 
         if now - last_hb >= hb_interval:
             proto.send_heartbeat()
@@ -201,8 +219,7 @@ async def run_send_loop(state: SharedState, proto: VehicleProtocol, cfg: dict):
 
         if now - last_tc >= tc_interval:
             ctrl = state.control
-            if ctrl.mode == 2 and not ctrl.estop:
-                proto.send_teleop(ctrl.linear_x, ctrl.angular_z)
+            proto.send_teleop(ctrl.linear_x, ctrl.angular_z)
             last_tc = now
 
         if now - last_push >= push_interval:

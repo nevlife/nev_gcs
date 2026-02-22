@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import logging
+import re
 from pathlib import Path
 
 import yaml
@@ -29,9 +30,41 @@ def load_config(path: str, overrides: dict) -> dict:
     return cfg
 
 
+def sync_zenohd_config(locator: str, zenohd_path: str = 'zenohd.json5') -> None:
+    """config.yaml 의 zenoh_locator 포트를 zenohd.json5 에 자동 반영."""
+    m = re.search(r':(\d+)$', locator)
+    if not m:
+        logger.warning(f'zenoh_locator 포트 파싱 실패: {locator!r} — zenohd.json5 를 수정하지 않음')
+        return
+    port = m.group(1)
+    Path(zenohd_path).write_text(
+        '{\n'
+        '  // 이 파일은 main.py 가 config.yaml 의 zenoh_locator 포트로 자동 생성합니다.\n'
+        '  // 직접 수정하지 말고 config.yaml 의 zenoh_locator 포트 번호만 바꾸세요.\n'
+        '  //\n'
+        '  // 실행 방법: zenohd --config zenohd.json5\n'
+        f'\n'
+        '  listen: {\n'
+        f'    endpoints: ["tcp/0.0.0.0:{port}"],\n'
+        '  },\n'
+        '\n'
+        '  scouting: {\n'
+        '    multicast: {\n'
+        '      // WAN 환경에서는 멀티캐스트 비활성화\n'
+        '      enabled: false,\n'
+        '    },\n'
+        '  },\n'
+        '}\n'
+    )
+    logger.info(f'zenohd.json5 → port {port}')
+
+
 async def run(cfg: dict):
     web_port = cfg.get('web_port', 8080)
     locator  = cfg.get('zenoh_locator', '')
+
+    if locator:
+        sync_zenohd_config(locator)
 
     state = SharedState()
     loop  = asyncio.get_running_loop()
