@@ -50,9 +50,12 @@ class CommandCenter {
     this.ws    = null;
     this.state = null;
     this._reconnectTimer = null;
+    this._pc   = null;
+    this._videoRetryTimer = null;
     this._bindUI();
     this._startClock();
     this._connect();
+    this._startVideo();
   }
 
   // ── WebSocket ──────────────────────────────────────
@@ -322,6 +325,80 @@ class CommandCenter {
     $('alerts-body').innerHTML = alerts
       .map(a => `<div class="alert-item alert-${a.level}">&#9650; ${a.message}</div>`)
       .join('');
+  }
+
+  // ── WebRTC video ───────────────────────────────────
+
+  async _startVideo() {
+    clearTimeout(this._videoRetryTimer);
+
+    const videoEl  = $('video');
+    const statusEl = $('video-status');
+
+    if (this._pc) {
+      this._pc.close();
+      this._pc = null;
+    }
+
+    const _retry = (msg) => {
+      if (statusEl) statusEl.textContent = msg;
+      this._videoRetryTimer = setTimeout(() => this._startVideo(), 5000);
+    };
+
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+      this._pc = pc;
+
+      pc.ontrack = (ev) => {
+        if (ev.streams && ev.streams[0]) {
+          videoEl.srcObject = ev.streams[0];
+          videoEl.style.display = 'block';
+          if ($('video-placeholder')) $('video-placeholder').style.display = 'none';
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+          videoEl.style.display = 'none';
+          if ($('video-placeholder')) $('video-placeholder').style.display = '';
+          _retry(`VIDEO ${pc.connectionState.toUpperCase()}`);
+        }
+      };
+
+      pc.addTransceiver('video', { direction: 'recvonly' });
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Wait for ICE gathering (max 3 s)
+      await new Promise(resolve => {
+        if (pc.iceGatheringState === 'complete') { resolve(); return; }
+        const onState = () => {
+          if (pc.iceGatheringState === 'complete') { resolve(); }
+        };
+        pc.addEventListener('icegatheringstatechange', onState);
+        setTimeout(resolve, 3000);
+      });
+
+      const resp = await fetch('/api/webrtc/offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
+      });
+
+      if (!resp.ok) { _retry('VIDEO ERR (offer)'); return; }
+
+      const answer = await resp.json();
+      await pc.setRemoteDescription(answer);
+
+      if (statusEl) statusEl.textContent = 'CONNECTING…';
+
+    } catch (e) {
+      console.error('WebRTC error:', e);
+      _retry('VIDEO ERR');
+    }
   }
 
   // ── Clock ─────────────────────────────────────────

@@ -32,8 +32,11 @@
 <div id="main">
 
   <div id="video-panel">
+    <video id="video" autoplay playsinline muted
+      style="width:100%;height:100%;object-fit:contain;background:#000;display:none">
+    </video>
     <div id="video-placeholder">
-      <span class="ns-text">NO SIGNAL</span>
+      <span class="ns-text" id="video-status">NO SIGNAL</span>
     </div>
   </div>
 

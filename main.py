@@ -30,21 +30,15 @@ def load_config(path: str, overrides: dict) -> dict:
 
 
 async def run(cfg: dict):
-    vehicle_ip   = cfg.get('vehicle_ip',   '127.0.0.1')
-    vehicle_port = cfg.get('vehicle_port', 5000)
-    rx_port      = cfg.get('rx_port',      5001)
-    web_port     = cfg.get('web_port',     8080)
+    web_port = cfg.get('web_port', 8080)
+    locator  = cfg.get('zenoh_locator', '')
 
     state = SharedState()
+    loop  = asyncio.get_running_loop()
 
-    loop = asyncio.get_running_loop()
-    proto = VehicleProtocol(state, (vehicle_ip, vehicle_port))
-
-    transport, _ = await loop.create_datagram_endpoint(
-        lambda: proto,
-        local_addr=('0.0.0.0', rx_port),
-    )
-    logger.info(f'UDP  listen={rx_port}  vehicle={vehicle_ip}:{vehicle_port}')
+    proto = VehicleProtocol(state, loop)
+    proto.start(locator)
+    logger.info(f'Zenoh bridge started → {locator or "auto-discovery"}')
 
     joystick = JoystickHandler(state, cfg.get('joystick', {}))
     joystick.set_proto(proto)
@@ -69,24 +63,20 @@ async def run(cfg: dict):
         )
     finally:
         joystick.stop()
-        transport.close()
+        proto.stop()
         logger.info('Shutdown complete')
 
 
 def main():
     parser = argparse.ArgumentParser(description='NEV GCS')
-    parser.add_argument('--config',      default='config.yaml')
-    parser.add_argument('--vehicle-ip',  default=None)
-    parser.add_argument('--vehicle-port',type=int, default=None)
-    parser.add_argument('--rx-port', type=int, default=None)
-    parser.add_argument('--web-port',    type=int, default=None)
+    parser.add_argument('--config',       default='config.yaml')
+    parser.add_argument('--zenoh-locator',default=None)
+    parser.add_argument('--web-port',     type=int, default=None)
     args = parser.parse_args()
 
     cfg = load_config(args.config, {
-        'vehicle_ip':   args.vehicle_ip,
-        'vehicle_port': args.vehicle_port,
-        'rx_port':      args.rx_port,
-        'web_port':     args.web_port,
+        'zenoh_locator': args.zenoh_locator,
+        'web_port':      args.web_port,
     })
 
     try:
