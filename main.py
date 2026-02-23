@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
+"""
+NEV GCS — 스테이션 모듈.
+
+조이스틱 입력을 읽어 서버(nev_remote_server)의 Zenoh 라우터로 전송.
+웹 UI 없음 — 브라우저는 서버에 직접 접속.
+"""
 import argparse
 import asyncio
 import logging
-import re
 from pathlib import Path
 
 import yaml
-import uvicorn
 
-from state import SharedState
-from vehicle_bridge import VehicleProtocol, run_send_loop
+from station_state import StationState
+from station_client import StationClient, run_send_loop
 from joystick import JoystickHandler
-from web.server import create_app
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,86 +33,37 @@ def load_config(path: str, overrides: dict) -> dict:
     return cfg
 
 
-def sync_zenohd_config(locator: str, zenohd_path: str = 'zenohd.json5') -> None:
-    """config.yaml 의 zenoh_locator 포트를 zenohd.json5 에 자동 반영."""
-    m = re.search(r':(\d+)$', locator)
-    if not m:
-        logger.warning(f'zenoh_locator 포트 파싱 실패: {locator!r} — zenohd.json5 를 수정하지 않음')
-        return
-    port = m.group(1)
-    Path(zenohd_path).write_text(
-        '{\n'
-        '  // 이 파일은 main.py 가 config.yaml 의 zenoh_locator 포트로 자동 생성합니다.\n'
-        '  // 직접 수정하지 말고 config.yaml 의 zenoh_locator 포트 번호만 바꾸세요.\n'
-        '  //\n'
-        '  // 실행 방법: zenohd --config zenohd.json5\n'
-        f'\n'
-        '  listen: {\n'
-        f'    endpoints: ["tcp/0.0.0.0:{port}"],\n'
-        '  },\n'
-        '\n'
-        '  scouting: {\n'
-        '    multicast: {\n'
-        '      // WAN 환경에서는 멀티캐스트 비활성화\n'
-        '      enabled: false,\n'
-        '    },\n'
-        '  },\n'
-        '}\n'
-    )
-    logger.info(f'zenohd.json5 → port {port}')
-
-
 async def run(cfg: dict):
-    web_port = cfg.get('web_port', 8080)
-    locator  = cfg.get('zenoh_locator', '')
+    locator = cfg.get('server_zenoh_locator', '')
 
-    if locator:
-        sync_zenohd_config(locator)
-
-    state = SharedState()
-    loop  = asyncio.get_running_loop()
-
-    proto = VehicleProtocol(state, loop)
-    proto.start(locator)
-    logger.info(f'Zenoh bridge started → {locator or "auto-discovery"}')
+    state  = StationState()
+    loop   = asyncio.get_running_loop()
+    client = StationClient()
+    client.start(locator)
 
     joystick = JoystickHandler(state, cfg.get('joystick', {}))
-    joystick.set_proto(proto)
+    joystick.set_client(client)
     joystick.set_loop(loop)
     joystick.start()
 
-    app = create_app(state, proto)
-    uv_cfg = uvicorn.Config(
-        app,
-        host='0.0.0.0',
-        port=web_port,
-        log_level='warning',
-        loop='none',
-    )
-    server = uvicorn.Server(uv_cfg)
-    logger.info(f'Web  http://0.0.0.0:{web_port}')
+    logger.info(f'Station started → server: {locator or "auto-discovery"}')
 
     try:
-        await asyncio.gather(
-            run_send_loop(state, proto, cfg),
-            server.serve(),
-        )
+        await run_send_loop(client, state, cfg)
     finally:
         joystick.stop()
-        proto.stop()
+        client.stop()
         logger.info('Shutdown complete')
 
 
 def main():
-    parser = argparse.ArgumentParser(description='NEV GCS')
-    parser.add_argument('--config',       default='config.yaml')
-    parser.add_argument('--zenoh-locator',default=None)
-    parser.add_argument('--web-port',     type=int, default=None)
+    parser = argparse.ArgumentParser(description='NEV GCS Station')
+    parser.add_argument('--config',         default='config.yaml')
+    parser.add_argument('--server-locator', default=None)
     args = parser.parse_args()
 
     cfg = load_config(args.config, {
-        'zenoh_locator': args.zenoh_locator,
-        'web_port':      args.web_port,
+        'server_zenoh_locator': args.server_locator,
     })
 
     try:

@@ -27,7 +27,7 @@ import threading
 import logging
 from typing import Optional
 
-from state import SharedState
+from station_state import StationState
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ except ImportError:
 
 
 class JoystickHandler:
-    def __init__(self, state: SharedState, cfg: dict):
+    def __init__(self, state: StationState, cfg: dict):
         self.state          = state
         self.axis_speed     = cfg.get('axis_speed',     1)   # 왼쪽 스틱 Y
         self.axis_steer     = cfg.get('axis_steer',     3)   # 오른쪽 스틱 X
@@ -56,7 +56,7 @@ class JoystickHandler:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._prev_btn_estop = False
-        self._proto = None
+        self._client = None
         self._loop = None
         self._use_estop_btn  = False
         self._has_raw_speed  = False
@@ -75,8 +75,8 @@ class JoystickHandler:
         if self._thread:
             self._thread.join(timeout=2.0)
 
-    def set_proto(self, proto):
-        self._proto = proto
+    def set_client(self, client):
+        self._client = client
 
     def set_loop(self, loop):
         self._loop = loop
@@ -111,17 +111,17 @@ class JoystickHandler:
             speed_raw = self._apply_deadzone(self._joystick.get_axis(self.axis_speed))
             if self.invert_speed:
                 speed_raw = -speed_raw
-            self.state.control.linear_x = speed_raw * self.max_speed
+            self.state.linear_x = speed_raw * self.max_speed
 
             # 조향: 오른쪽 스틱 X → 조향각(rad) → angular_z 자리로 전송
             steer_raw = self._apply_deadzone(self._joystick.get_axis(self.axis_steer))
-            self.state.control.angular_z = -steer_raw * self.max_steer
+            self.state.angular_z = -steer_raw * self.max_steer
 
             # 표시용 raw 축
-            self.state.control.raw_speed = (
+            self.state.raw_speed = (
                 self._joystick.get_axis(self.axis_raw_speed) if self._has_raw_speed else 0.0
             )
-            self.state.control.raw_steer = (
+            self.state.raw_steer = (
                 self._joystick.get_axis(self.axis_raw_steer) if self._has_raw_steer else 0.0
             )
 
@@ -132,10 +132,14 @@ class JoystickHandler:
                     self._toggle_estop()
                 self._prev_btn_estop = btn
 
-            # UI broadcast (20Hz)
+            # joystick_connected 변경 시 서버에 알림
             now = time.monotonic()
-            if self._loop and now - self._last_broadcast >= 0.05:
-                self._loop.call_soon_threadsafe(self.state._broadcast_sync)
+            if self._client and now - self._last_broadcast >= 0.05:
+                if self._loop:
+                    self._loop.call_soon_threadsafe(
+                        self._client.send_joystick_connected,
+                        self.state.joystick_connected
+                    )
                 self._last_broadcast = now
 
             time.sleep(0.02)  # 50 Hz
@@ -146,7 +150,7 @@ class JoystickHandler:
         pygame.joystick.quit()
         pygame.joystick.init()
         if pygame.joystick.get_count() == 0:
-            self.state.control.joystick_connected = False
+            self.state.joystick_connected = False
             return
 
         joy = pygame.joystick.Joystick(0)
@@ -155,7 +159,7 @@ class JoystickHandler:
         logger.info(f'Joystick connected: {joy.get_name()}')
 
         self._validate_config(joy)
-        self.state.control.joystick_connected = True
+        self.state.joystick_connected = True
 
     def _validate_config(self, joy):
         """접속 직후 한 번만 실행. 잘못된 axis/button 인덱스를 조기에 잡는다."""
@@ -195,11 +199,11 @@ class JoystickHandler:
 
     def _on_disconnect(self):
         self._joystick = None
-        self.state.control.joystick_connected = False
-        self.state.control.linear_x  = 0.0
-        self.state.control.angular_z = 0.0
-        self.state.control.raw_speed = 0.0
-        self.state.control.raw_steer = 0.0
+        self.state.joystick_connected = False
+        self.state.linear_x  = 0.0
+        self.state.angular_z = 0.0
+        self.state.raw_speed = 0.0
+        self.state.raw_steer = 0.0
 
     def _apply_deadzone(self, value: float) -> float:
         if abs(value) < self.deadzone:
@@ -208,9 +212,9 @@ class JoystickHandler:
         return sign * (abs(value) - self.deadzone) / (1.0 - self.deadzone)
 
     def _toggle_estop(self):
-        if self._proto is None:
+        if self._client is None:
             return
-        new_val = not self.state.control.estop
-        self.state.control.estop = new_val
-        self._proto.send_estop(new_val)
+        new_val = not self.state.estop
+        self.state.estop = new_val
+        self._client.send_estop(new_val)
         logger.info(f'Joystick e-stop → {new_val}')
