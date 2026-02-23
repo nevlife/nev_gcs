@@ -115,7 +115,7 @@ class JoystickHandler:
 
             # 조향: 오른쪽 스틱 X → 조향각(rad) → angular_z 자리로 전송
             steer_raw = self._apply_deadzone(self._joystick.get_axis(self.axis_steer))
-            self.state.control.angular_z = steer_raw * self.max_steer
+            self.state.control.angular_z = -steer_raw * self.max_steer
 
             # 표시용 raw 축
             self.state.control.raw_speed = (
