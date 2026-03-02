@@ -49,6 +49,7 @@ class JoystickHandler:
         self.btn_estop      = cfg.get('btn_estop',      4)
         self.max_speed      = cfg.get('max_speed',      1.0)
         self.max_steer      = math.radians(cfg.get('max_steer_deg', 27.0))
+        self.wheelbase      = cfg.get('wheelbase',      0.650)  # Hunter V2
         self.deadzone       = cfg.get('deadzone',       0.05)
         self.invert_speed   = cfg.get('invert_speed',   True)
 
@@ -112,10 +113,17 @@ class JoystickHandler:
             if self.invert_speed:
                 speed_raw = -speed_raw
             self.state.linear_x = speed_raw * self.max_speed
+            print(f'speed_raw={speed_raw:.3f}  linear_x={self.state.linear_x:.4f} m/s')
 
-            # 조향: 오른쪽 스틱 X → 조향각(rad) → angular_z 자리로 전송
+            # 조향: 오른쪽 스틱 X → 각속도(rad/s)로 변환 후 전송
+            # ω = linear_x * tan(조향각) / wheelbase
             steer_raw = self._apply_deadzone(self._joystick.get_axis(self.axis_steer))
-            self.state.angular_z = -steer_raw * self.max_steer
+            steer_angle = -steer_raw * self.max_steer
+            if abs(steer_angle) < 1e-6:
+                self.state.angular_z = 0.0
+            else:
+                self.state.angular_z = self.state.linear_x * math.tan(steer_angle) / self.wheelbase
+            print(f'steer_raw={steer_raw:.3f}  steer_angle={math.degrees(steer_angle):.1f}deg  angular_z={self.state.angular_z:.4f} rad/s')
 
             # 표시용 raw 축
             self.state.raw_speed = (
