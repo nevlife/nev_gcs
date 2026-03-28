@@ -20,7 +20,9 @@ async def run_send_loop(client: StationClient, state: StationState, cfg: dict):
             last_hb = now
 
         if now - last_tc >= tc_interval:
-            client.send_teleop(state.linear_x, state.steer_angle)
+            # Atomic read to avoid torn reads (linear_x from one time, steer_angle from another)
+            linear_x, steer_angle = state.get_control()
+            client.send_teleop(linear_x, steer_angle)
             last_tc = now
 
         await asyncio.sleep(0.01)
