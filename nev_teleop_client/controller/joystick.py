@@ -19,26 +19,27 @@ class JoystickController(Controller):
 
     def __init__(self, state: StationState, cfg: dict):
         super().__init__(state)
-        self.axis_speed     = cfg.get('axis_speed',     1)
-        self.axis_steer     = cfg.get('axis_steer',     3)
-        self.axis_raw_speed = cfg.get('axis_raw_speed', 4)
-        self.axis_raw_steer = cfg.get('axis_raw_steer', 0)
-        self.btn_estop      = cfg.get('btn_estop',      4)
-        self.max_speed      = cfg.get('max_speed',      1.0)
-        self.max_steer      = math.radians(cfg.get('max_steer_deg', 27.0))
-        self.deadzone       = cfg.get('deadzone',       0.05)
-        self.invert_speed   = cfg.get('invert_speed',   True)
+        self.axis_speed   = cfg.get('axis_speed',   1)
+        self.axis_steer   = cfg.get('axis_steer',   3)
+        self.btn_estop    = cfg.get('btn_estop',    4)
+        self.max_speed    = cfg.get('max_speed',    1.0)
+        self.max_steer    = math.radians(cfg.get('max_steer_deg', 27.0))
+        self.deadzone     = cfg.get('deadzone',     0.05)
+        self.invert_speed = cfg.get('invert_speed', True)
 
         self._joystick: Optional[object] = None
-        self._use_estop_btn  = False
-        self._has_raw_speed  = False
-        self._has_raw_steer  = False
+        self._use_estop_btn = False
 
     def name(self) -> str:
         return 'joystick'
 
     def start(self):
         if not _HAS_PYGAME:
+            logger.warning('pygame not available — joystick disabled, waiting for shutdown')
+            self._running = True
+            while self._running:
+                import time
+                time.sleep(0.1)
             return
         super().start()
 
@@ -78,10 +79,6 @@ class JoystickController(Controller):
         steer = self._apply_deadzone(joy.get_axis(self.axis_steer))
         self.state.steer_angle = -steer * self.max_steer
 
-        # raw
-        self.state.raw_speed = joy.get_axis(self.axis_raw_speed) if self._has_raw_speed else 0.0
-        self.state.raw_steer = joy.get_axis(self.axis_raw_steer) if self._has_raw_steer else 0.0
-
         return True
 
     def on_disconnect(self):
@@ -102,13 +99,6 @@ class JoystickController(Controller):
         if self.axis_steer >= num_axes:
             logger.error(f'axis_steer={self.axis_steer} out of range ({num_axes} axes) — clamped to 0')
             self.axis_steer = 0
-
-        self._has_raw_speed = self.axis_raw_speed < num_axes
-        self._has_raw_steer = self.axis_raw_steer < num_axes
-        if not self._has_raw_speed:
-            logger.warning(f'axis_raw_speed={self.axis_raw_speed} out of range — disabled')
-        if not self._has_raw_steer:
-            logger.warning(f'axis_raw_steer={self.axis_raw_steer} out of range — disabled')
 
         self._use_estop_btn = self.btn_estop < num_buttons
         if not self._use_estop_btn:

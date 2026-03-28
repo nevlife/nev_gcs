@@ -1,5 +1,4 @@
 import time
-import threading
 import logging
 from abc import ABC, abstractmethod
 from typing import Optional
@@ -10,11 +9,11 @@ logger = logging.getLogger(__name__)
 
 
 class Controller(ABC):
+    """Poll-based controller that must run on the main thread (required by macOS/SDL)."""
 
     def __init__(self, state: StationState):
         self.state = state
         self._running = False
-        self._thread: Optional[threading.Thread] = None
         self._client = None
         self._loop = None
         self._last_broadcast = 0.0
@@ -24,16 +23,19 @@ class Controller(ABC):
         self._loop = loop
 
     def start(self):
+        """Blocking main-thread loop. Returns when stop() is called from another thread."""
         self._running = True
-        self._thread = threading.Thread(
-            target=self._run, name=self.name(), daemon=True,
-        )
-        self._thread.start()
+        self._setup()
+        try:
+            while self._running:
+                self.state.controller_connected = self.poll()
+                self._broadcast_status()
+                time.sleep(0.02)  # 50 Hz
+        finally:
+            self._teardown()
 
     def stop(self):
         self._running = False
-        if self._thread:
-            self._thread.join(timeout=2.0)
 
     @abstractmethod
     def name(self) -> str:
@@ -47,16 +49,6 @@ class Controller(ABC):
         self.state.controller_connected = False
         self.state.linear_x = 0.0
         self.state.steer_angle = 0.0
-        self.state.raw_speed = 0.0
-        self.state.raw_steer = 0.0
-
-    def _run(self):
-        self._setup()
-        while self._running:
-            self.state.controller_connected = self.poll()
-            self._broadcast_status()
-            time.sleep(0.02)  # 50 Hz
-        self._teardown()
 
     def _setup(self):
         pass

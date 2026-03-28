@@ -56,13 +56,10 @@ class StationClient:
             'ts': time.time(),
         })
 
-    def send_teleop(self, linear_x: float, steer_angle: float,
-                    raw_speed: float = 0.0, raw_steer: float = 0.0):
+    def send_teleop(self, linear_x: float, steer_angle: float):
         self._publish('nev/station/teleop', {
             'linear_x':    round(linear_x,    3),
             'steer_angle': round(steer_angle, 4),
-            'raw_speed':   round(raw_speed,   3),
-            'raw_steer':   round(raw_steer,   3),
         })
 
     def send_estop(self, activate: bool):
