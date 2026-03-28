@@ -32,31 +32,31 @@ def main():
     client.start(locator)
 
     loop = asyncio.new_event_loop()
-    stop_event = threading.Event()
+    async_stop_event = asyncio.Event()
+    done_event = threading.Event()
     controller = create_controller(state, cfg)
     controller.setup(client, loop)
 
     async def async_run():
         logger.info(f'Station started → server: {locator or "auto-discovery"}')
         try:
-            await run_send_loop(client, state, cfg)
+            await run_send_loop(client, state, cfg, stop_event=async_stop_event)
         finally:
             client.stop()
-            stop_event.set()
+            done_event.set()
             logger.info('Shutdown complete')
 
-    # asyncio는 백그라운드 스레드에서, pygame(SDL)은 메인 스레드에서 실행
     t = threading.Thread(target=loop.run_until_complete, args=(async_run(),), daemon=True)
     t.start()
 
     try:
-        controller.start()  # 메인 스레드에서 블로킹 — pygame/SDL 요구사항
+        controller.start()
     except KeyboardInterrupt:
         logger.info('Stopped by user')
     finally:
         controller.stop()
-        loop.call_soon_threadsafe(loop.stop)
-        stop_event.wait(timeout=3.0)
+        loop.call_soon_threadsafe(async_stop_event.set)
+        done_event.wait(timeout=3.0)
         t.join(timeout=1.0)
 
 

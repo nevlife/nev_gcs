@@ -8,8 +8,6 @@ controller_type: joystick
 joystick:
   axis_speed: 1
   axis_steer: 3
-  axis_raw_speed: 1     # right stick y
-  axis_raw_steer: 3     # left stick x
   btn_estop: 4          # shoulder button for e-stop toggle
   max_speed: 1.0        # m/s
   max_steer_deg: 27.0

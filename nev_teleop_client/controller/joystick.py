@@ -36,8 +36,8 @@ class JoystickController(Controller):
     def start(self):
         if not _HAS_PYGAME:
             logger.warning('pygame not available — joystick disabled, waiting for shutdown')
-            self._running = True
-            while self._running:
+            self._stop_event.clear()
+            while not self._stop_event.is_set():
                 import time
                 time.sleep(0.1)
             return

@@ -57,7 +57,7 @@ joystick:
 | 토픽 | 주기 | 내용 |
 |------|------|------|
 | `nev/station/client_heartbeat` | 5 Hz | `{ts}` |
-| `nev/station/teleop` | 20 Hz | `{linear_x, steer_angle, raw_speed, raw_steer}` |
+| `nev/station/teleop` | 20 Hz | `{linear_x, steer_angle}` |
 | `nev/station/controller_heartbeat` | 20 Hz | `{connected}` |
 | `nev/station/estop` | 이벤트 | `{active}` |
 | `nev/station/cmd_mode` | 이벤트 | `{mode}` |

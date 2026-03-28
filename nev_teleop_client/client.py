@@ -34,16 +34,27 @@ class StationClient:
             conf.insert_json5('connect/endpoints', json.dumps([locator]))
         self._session = zenoh.open(conf)
 
-        for key in self.TOPICS:
-            self._pubs[key] = self._session.declare_publisher(key, **_TOPIC_QOS[key])
+        try:
+            for key in self.TOPICS:
+                self._pubs[key] = self._session.declare_publisher(key, **_TOPIC_QOS[key])
+        except Exception:
+            self.stop()
+            raise
 
         logger.info(f'StationClient started → {locator or "auto-discovery"}')
 
     def stop(self) -> None:
-        for pub in self._pubs.values():
-            pub.undeclare()
-        if self._session:
-            self._session.close()
+        for key, pub in self._pubs.items():
+            try:
+                pub.undeclare()
+            except Exception as e:
+                logger.warning(f'Error undeclaring publisher [{key}]: {e}')
+        try:
+            if self._session:
+                self._session.close()
+        finally:
+            self._pubs.clear()
+            self._session = None
 
     def _publish(self, key: str, data: dict) -> None:
         try:

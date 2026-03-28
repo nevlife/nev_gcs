@@ -77,6 +77,12 @@ class StationState:
         with self._lock:
             return (self._linear_x, self._steer_angle)
     
+    def reset_control(self, connected: bool = False) -> None:
+        with self._lock:
+            self._controller_connected = connected
+            self._linear_x = 0.0
+            self._steer_angle = 0.0
+
     def toggle_estop(self) -> bool:
         """
         Atomically toggle e-stop state.

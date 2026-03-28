@@ -1,7 +1,7 @@
 import time
 import logging
+import threading
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from ..state import StationState
 
@@ -13,7 +13,7 @@ class Controller(ABC):
 
     def __init__(self, state: StationState):
         self.state = state
-        self._running = False
+        self._stop_event = threading.Event()
         self._client = None
         self._loop = None
         self._last_broadcast = 0.0
@@ -24,18 +24,19 @@ class Controller(ABC):
 
     def start(self):
         """Blocking main-thread loop. Returns when stop() is called from another thread."""
-        self._running = True
+        self._stop_event.clear()
         self._setup()
+        logger.info(f'{self.name()} controller started')
         try:
-            while self._running:
+            while not self._stop_event.is_set():
                 self.state.controller_connected = self.poll()
                 self._broadcast_status()
-                time.sleep(0.02)  # 50 Hz
+                time.sleep(0.02)
         finally:
             self._teardown()
 
     def stop(self):
-        self._running = False
+        self._stop_event.set()
 
     @abstractmethod
     def name(self) -> str:
@@ -46,9 +47,7 @@ class Controller(ABC):
         ...
 
     def on_disconnect(self):
-        self.state.controller_connected = False
-        self.state.linear_x = 0.0
-        self.state.steer_angle = 0.0
+        self.state.reset_control(connected=False)
 
     def _setup(self):
         pass
@@ -58,9 +57,6 @@ class Controller(ABC):
 
     def _broadcast_status(self):
         now = time.monotonic()
-        if self._client and self._loop and now - self._last_broadcast >= 0.05:
-            self._loop.call_soon_threadsafe(
-                self._client.send_controller_heartbeat,
-                self.state.controller_connected,
-            )
+        if self._client and now - self._last_broadcast >= 0.05:
+            self._client.send_controller_heartbeat(self.state.controller_connected)
             self._last_broadcast = now
