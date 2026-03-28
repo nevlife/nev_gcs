@@ -62,16 +62,7 @@ joystick:
 | `nev/station/estop` | 이벤트 | `{active}` |
 | `nev/station/cmd_mode` | 이벤트 | `{mode}` |
 
-## 컨트롤러 추가
-
-1. `controller/` 안에 `Controller`를 상속하는 클래스 작성
-2. `name()`과 `poll()` 구현
-3. `controller/__init__.py`의 `CONTROLLERS`에 등록
-4. `config.yaml`에 설정 섹션 추가
-
 ## 의존성
 
-- Python 3
 - [zenoh](https://zenoh.io/)
-- [pygame](https://www.pygame.org/) (조이스틱 컨트롤러 사용 시)
-- PyYAML
+- [pygame](https://www.pygame.org/)
